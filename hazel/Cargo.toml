@@ -1,0 +1,10 @@
+[package]
+name = "hazel"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+iso8601-timestamp = "0.2.16"
+log = "0.4.20"
+simple_logger = "4.3.3"
+colored = "2.1.0"
