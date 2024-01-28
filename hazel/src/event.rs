@@ -1,32 +1,14 @@
-use std::{
-    fmt::Display,
-    ops::{BitAnd, BitOr},
-};
+use bitflags::*;
+use std::fmt::Display;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub struct EventCategory(u8);
-
-impl EventCategory {
-    pub const None: EventCategory = EventCategory(0x00);
-    pub const Application: EventCategory = EventCategory(0x01);
-    pub const Input: EventCategory = EventCategory(0x02);
-    pub const Keyboard: EventCategory = EventCategory(0x04);
-    pub const Mouse: EventCategory = EventCategory(0x08);
-}
-
-impl BitAnd for EventCategory {
-    type Output = EventCategory;
-
-    fn bitand(self, rhs: Self) -> Self::Output {
-        return EventCategory(self.0 & rhs.0);
-    }
-}
-
-impl BitOr for EventCategory {
-    type Output = EventCategory;
-
-    fn bitor(self, rhs: Self) -> Self::Output {
-        return EventCategory(self.0 | rhs.0);
+bitflags! {
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    pub struct EventCategory : u8 {
+        const None = 0x00;
+        const Application = 0x01;
+        const Input = 0x02;
+        const Keyboard = 0x04;
+        const Mouse = 0x08;
     }
 }
 

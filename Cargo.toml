@@ -1,6 +1,3 @@
 [workspace]
 resolver = "2"
 members = ["hazel", "sandbox"]
-
-[workspace.dependencies]
-tap = "1.0.1"
