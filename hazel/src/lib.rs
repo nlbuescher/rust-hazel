@@ -2,12 +2,13 @@ pub mod event;
 
 use colored::Colorize;
 use iso8601_timestamp::Timestamp;
-use std::{fmt, iter::once};
+use std::{fmt, iter::once, sync::Arc};
+use tap::Pipe;
 use wgpu::*;
 use winit::{
 	dpi::{LogicalSize, PhysicalSize},
 	event::{Event, WindowEvent},
-	event_loop::EventLoop,
+	event_loop::{EventLoop, EventLoopWindowTarget},
 	window::{Window, WindowBuilder},
 };
 
@@ -28,6 +29,7 @@ impl fmt::Display for Level {
 	}
 }
 
+#[allow(unused)]
 pub fn log<Message: AsRef<str>>(level: Level, message: Message) {
 	let level_string: String = match level {
 		Level::Error => format!("{:<5}", level.to_string().red()),
@@ -44,6 +46,7 @@ pub fn log<Message: AsRef<str>>(level: Level, message: Message) {
 	);
 }
 
+#[allow(unused)]
 fn core_log<Message: AsRef<str>>(level: Level, message: Message) {
 	let level_string: String = match level {
 		Level::Error => format!("{:<5}", level.to_string().red()),
@@ -205,22 +208,57 @@ pub enum Error {
 	Core,
 }
 
-struct Engine<'window> {
-	surface: Surface<'window>,
-	device: Device,
-	queue: Queue,
-	config: SurfaceConfiguration,
-	size: PhysicalSize<u32>,
-	window: &'window Window,
+pub struct Context<'a, 'window> {
+	application: &'a mut Application<'window>,
+	event_loop: &'a EventLoopWindowTarget<()>,
 }
 
-impl<'window> Engine<'window> {
-	async fn new(window: &'window Window) -> Self {
+impl<'a, 'window> Context<'a, 'window> {
+	fn new(
+		application: &'a mut Application<'window>,
+		event_loop: &'a EventLoopWindowTarget<()>,
+	) -> Self {
+		Context {
+			application,
+			event_loop,
+		}
+	}
+
+	pub fn exit(&self) {
+		self.event_loop.exit();
+	}
+
+	pub fn resize(&mut self, width: u32, height: u32) {
+		self.application.resize(width, height);
+	}
+}
+
+struct Application<'window> {
+	size: PhysicalSize<u32>,
+	config: SurfaceConfiguration,
+	queue: Queue,
+	device: Device,
+	surface: Surface<'window>,
+	window: Arc<Window>,
+	event_loop: Option<EventLoop<()>>,
+}
+
+impl<'window> Application<'window> {
+	pub async fn new() -> Self {
+		let event_loop = EventLoop::new().unwrap();
+
+		let window = WindowBuilder::new()
+			.with_title("Hazel Engine")
+			.with_inner_size(LogicalSize::new(1280, 720))
+			.build(&event_loop)
+			.unwrap()
+			.pipe(Arc::new);
+
 		let size = window.inner_size();
 
 		let instance = Instance::new(InstanceDescriptor::default());
 
-		let surface = instance.create_surface(window).unwrap();
+		let surface = instance.create_surface(window.clone()).unwrap();
 
 		let adapter = instance
 			.request_adapter(&RequestAdapterOptions {
@@ -264,19 +302,64 @@ impl<'window> Engine<'window> {
 		};
 
 		Self {
-			surface,
-			device,
-			queue,
-			config,
 			size,
+			config,
+			queue,
+			device,
+			surface,
 			window,
+			event_loop: Some(event_loop),
 		}
 	}
 
-	pub fn resize(&mut self, new_size: PhysicalSize<u32>) {
-		self.size = new_size;
-		self.config.width = new_size.width;
-		self.config.height = new_size.height;
+	pub fn run(
+		mut self,
+		mut event_handler: impl FnMut(&mut Context, event::Event),
+	) -> Result<(), crate::Error> {
+		match self.event_loop {
+			None => Err(Error::Core),
+			Some(_) => self
+				.event_loop
+				.take()
+				.unwrap()
+				.run(move |winit_event, event_loop| {
+					let mut context = Context::new(&mut self, event_loop);
+
+					match winit_event {
+						Event::WindowEvent {
+							window_id: _,
+							event: WindowEvent::RedrawRequested,
+						} => {
+							self.update();
+							match self.render() {
+								Ok(_) => {}
+								Err(SurfaceError::Lost) => {
+									self.resize(self.size.width, self.size.height)
+								}
+								Err(SurfaceError::OutOfMemory) => event_loop.exit(),
+								Err(error) => eprintln!("{error:?}"),
+							}
+						}
+
+						Event::AboutToWait => {
+							self.window.request_redraw();
+						}
+
+						_ => {
+							if let Ok(event) = event::Event::try_from(winit_event) {
+								event_handler(&mut context, event);
+							}
+						}
+					}
+				})
+				.map_err(|_| crate::Error::Core),
+		}
+	}
+
+	pub fn resize(&mut self, width: u32, height: u32) {
+		self.size = PhysicalSize::new(width, height);
+		self.config.width = width;
+		self.config.height = height;
 		self.surface.configure(&self.device, &self.config);
 	}
 
@@ -322,40 +405,22 @@ impl<'window> Engine<'window> {
 	}
 }
 
-pub async fn run() -> Result<(), crate::Error> {
-	let event_loop = EventLoop::new().unwrap();
-	let window = WindowBuilder::new()
-		.with_title("Hazel Engine")
-		.with_inner_size(LogicalSize::new(1280, 720))
-		.build(&event_loop)
-		.unwrap();
-	let mut engine = Engine::new(&window).await;
+pub trait Core {
+	fn on_window_close(&self, context: &mut Context);
+	fn on_window_resize(&self, context: &mut Context, width: u32, height: u32);
+}
 
-	event_loop
-		.run(move |event, event_loop| match event {
-			Event::WindowEvent {
-				window_id,
-				ref event,
-			} if window_id == engine.window.id() => match event {
-				WindowEvent::CloseRequested => event_loop.exit(),
-				WindowEvent::Resized(new_size) => {
-					engine.resize(*new_size);
-				}
-				WindowEvent::RedrawRequested => {
-					engine.update();
-					match engine.render() {
-						Ok(_) => {},
-						Err(SurfaceError::Lost) => engine.resize(engine.size),
-						Err(SurfaceError::OutOfMemory) => event_loop.exit(),
-                        Err(error) => eprintln!("{error:?}")
-					}
-				}
-				_ => {}
-			}
-            Event::AboutToWait => {
-                engine.window.request_redraw();
-            }
-			_ => {}
-		})
-		.map_err(|_| crate::Error::Core)
+pub async fn run(core: impl Core) -> Result<(), crate::Error> {
+	let application = Application::new().await;
+	application.run(move |context, event| match event {
+		event::Event::WindowClose => {
+			core.on_window_close(context);
+		}
+
+		event::Event::WindowResize { width, height } => {
+			core.on_window_resize(context, width, height)
+		}
+
+		_ => {}
+	})
 }
