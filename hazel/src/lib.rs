@@ -1,206 +1,42 @@
 pub mod event;
+mod log;
 
-use colored::Colorize;
-use iso8601_timestamp::Timestamp;
-use std::{fmt, iter::once, sync::Arc};
+pub use crate::log::log;
+pub use crate::log::LogLevel;
+use crate::log::*;
+use std::fmt::Display;
+use std::{iter::once, sync::Arc};
 use tap::Pipe;
 use wgpu::*;
+use winit::dpi::LogicalSize;
 use winit::{
-	dpi::{LogicalSize, PhysicalSize},
 	event::{Event, WindowEvent},
 	event_loop::{EventLoop, EventLoopWindowTarget},
 	window::{Window, WindowBuilder},
 };
 
-#[derive(Clone, Copy)]
-pub enum Level {
-	Error,
-	Warn,
-	Info,
-	Debug,
-	Trace,
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default, Hash)]
+pub struct Position<T> {
+	x: T,
+	y: T,
 }
 
-static LOG_LEVEL_NAMES: [&str; 5] = ["ERROR", "WARN", "INFO", "DEBUG", "TRACE"];
-
-impl fmt::Display for Level {
-	fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-		fmt.pad(LOG_LEVEL_NAMES[*self as usize])
+impl<T: Display> Display for Position<T> {
+	fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		write!(fmt, "({}, {})", self.x, self.y)
 	}
 }
 
-#[allow(unused)]
-pub fn log<Message: AsRef<str>>(level: Level, message: Message) {
-	let level_string: String = match level {
-		Level::Error => format!("{:<5}", level.to_string().red()),
-		Level::Warn => format!("{:<5}", level.to_string().yellow()),
-		Level::Info => format!("{:<5}", level.to_string().cyan()),
-		Level::Debug => format!("{:<5}", level.to_string().purple()),
-		Level::Trace => format!("{:<5}", level.to_string().normal()),
-	};
-	println!(
-		"{} {} [APP] {}",
-		Timestamp::now_utc().format(),
-		level_string,
-		message.as_ref()
-	);
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default, Hash)]
+pub struct Size<T> {
+	width: T,
+	height: T,
 }
 
-#[allow(unused)]
-fn core_log<Message: AsRef<str>>(level: Level, message: Message) {
-	let level_string: String = match level {
-		Level::Error => format!("{:<5}", level.to_string().red()),
-		Level::Warn => format!("{:<5}", level.to_string().yellow()),
-		Level::Info => format!("{:<5}", level.to_string().cyan()),
-		Level::Debug => format!("{:<5}", level.to_string().purple()),
-		Level::Trace => format!("{:<5}", level.to_string().normal()),
-	};
-	println!(
-		"{} {} [HAZEL] {}",
-		Timestamp::now_utc().format(),
-		level_string,
-		message.as_ref()
-	);
-}
-
-#[macro_export]
-macro_rules! trace {
-    ($($args:expr),+) => {
-        #[cfg(debug_assertions)]
-        {
-            log(Level::Trace, format!($($args),+))
-        }
-        #[cfg(not(debug_assertions))]
-        {
-            ($($args),+)
-        }
-    };
-}
-
-#[macro_export]
-macro_rules! debug {
-    ($($args:expr),+) => {
-        #[cfg(debug_assertions)]
-        {
-            log(Level::Debug, format!($($args),+))
-        }
-        #[cfg(not(debug_assertions))]
-        {
-            ($($args),+)
-        }
-    };
-}
-
-#[macro_export]
-macro_rules! info {
-    ($($args:expr),+) => {
-        #[cfg(debug_assertions)]
-        {
-            log(Level::Info, format!($($args),+))
-        }
-        #[cfg(not(debug_assertions))]
-        {
-            ($($args),+)
-        }
-    };
-}
-
-#[macro_export]
-macro_rules! warn {
-    ($($args:expr),+) => {
-        #[cfg(debug_assertions)]
-        {
-            log(Level::Warn, format!($($args),+))
-        }
-        #[cfg(not(debug_assertions))]
-        {
-            ($($args),+)
-        }
-    };
-}
-
-#[macro_export]
-macro_rules! error {
-    ($($args:expr),+) => {
-        #[cfg(debug_assertions)]
-        {
-            log(Level::Error, format!($($args),+))
-        }
-        #[cfg(not(debug_assertions))]
-        {
-            ($($args),+)
-        }
-    };
-}
-
-#[allow(unused)]
-macro_rules! core_trace {
-    ($($args:expr),+) => {
-        #[cfg(debug_assertions)]
-        {
-            core_log(Level::Trace, format!($($args),+))
-        }
-        #[cfg(not(debug_assertions))]
-        {
-            ($($args),+)
-        }
-    };
-}
-
-#[allow(unused)]
-macro_rules! core_debug {
-    ($($args:expr),+) => {
-        #[cfg(debug_assertions)]
-        {
-            core_log(Level::Debug, format!($($args),+))
-        }
-        #[cfg(not(debug_assertions))]
-        {
-            ($($args),+)
-        }
-    };
-}
-
-#[allow(unused)]
-macro_rules! core_info {
-    ($($args:expr),+) => {
-        #[cfg(debug_assertions)]
-        {
-            core_log(Level::Info, format!($($args),+))
-        }
-        #[cfg(not(debug_assertions))]
-        {
-            ($($args),+)
-        }
-    };
-}
-
-#[allow(unused)]
-macro_rules! core_warn {
-    ($($args:expr),+) => {
-        #[cfg(debug_assertions)]
-        {
-            crate::core_log(Level::Warn, format!($($args),+))
-        }
-        #[cfg(not(debug_assertions))]
-        {
-            ($($args),+)
-        }
-    };
-}
-
-#[allow(unused)]
-macro_rules! core_error {
-    ($($args:expr),+) => {
-        #[cfg(debug_assertions)]
-        {
-            hazel::core_log(Level::Error, format!($($args),+))
-        }
-        #[cfg(not(debug_assertions))]
-        {
-            ($($args),+)
-        }
-    };
+impl<T: Display> Display for Size<T> {
+	fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		write!(fmt, "({}, {})", self.width, self.height)
+	}
 }
 
 #[derive(Debug)]
@@ -228,13 +64,13 @@ impl<'a, 'window> Context<'a, 'window> {
 		self.event_loop.exit();
 	}
 
-	pub fn resize(&mut self, width: u32, height: u32) {
-		self.application.resize(width, height);
+	pub fn resize(&mut self, size: Size<u32>) {
+		self.application.resize(size);
 	}
 }
 
 struct Application<'window> {
-	size: PhysicalSize<u32>,
+	size: Size<u32>,
 	config: SurfaceConfiguration,
 	queue: Queue,
 	device: Device,
@@ -302,7 +138,10 @@ impl<'window> Application<'window> {
 		};
 
 		Self {
-			size,
+			size: Size {
+				width: size.width,
+				height: size.height,
+			},
 			config,
 			queue,
 			device,
@@ -333,9 +172,7 @@ impl<'window> Application<'window> {
 							self.update();
 							match self.render() {
 								Ok(_) => {}
-								Err(SurfaceError::Lost) => {
-									self.resize(self.size.width, self.size.height)
-								}
+								Err(SurfaceError::Lost) => self.resize(self.size),
 								Err(SurfaceError::OutOfMemory) => event_loop.exit(),
 								Err(error) => eprintln!("{error:?}"),
 							}
@@ -356,10 +193,10 @@ impl<'window> Application<'window> {
 		}
 	}
 
-	pub fn resize(&mut self, width: u32, height: u32) {
-		self.size = PhysicalSize::new(width, height);
-		self.config.width = width;
-		self.config.height = height;
+	pub fn resize(&mut self, size: Size<u32>) {
+		self.config.width = size.width;
+		self.config.height = size.height;
+		self.size = size;
 		self.surface.configure(&self.device, &self.config);
 	}
 
@@ -407,20 +244,20 @@ impl<'window> Application<'window> {
 
 pub trait Core {
 	fn on_window_close(&self, context: &mut Context);
-	fn on_window_resize(&self, context: &mut Context, width: u32, height: u32);
+	fn on_window_resize(&self, context: &mut Context, size: Size<u32>);
 }
 
 pub async fn run(core: impl Core) -> Result<(), crate::Error> {
 	let application = Application::new().await;
-	application.run(move |context, event| match event {
-		event::Event::WindowClose => {
-			core.on_window_close(context);
-		}
+	application.run(move |context, event| {
+		core_info!("{event}");
 
-		event::Event::WindowResize { width, height } => {
-			core.on_window_resize(context, width, height)
-		}
+		match event {
+			event::Event::WindowClose => core.on_window_close(context),
 
-		_ => {}
+			event::Event::WindowResize { size } => core.on_window_resize(context, size),
+
+			_ => {}
+		}
 	})
 }

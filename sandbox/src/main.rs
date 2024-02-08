@@ -1,3 +1,5 @@
+use hazel::{Context, Size};
+
 struct Sandbox {}
 
 impl Sandbox {
@@ -7,16 +9,17 @@ impl Sandbox {
 }
 
 impl hazel::Core for Sandbox {
-	fn on_window_close(&self, context: &mut hazel::Context) {
+	fn on_window_close(&self, context: &mut Context) {
 		context.exit()
 	}
 
-	fn on_window_resize(&self, context: &mut hazel::Context, width: u32, height: u32) {
-		context.resize(width, height);
+	fn on_window_resize(&self, context: &mut Context, size: Size<u32>) {
+		context.resize(size);
 	}
 }
 
 #[pollster::main]
 async fn main() -> Result<(), hazel::Error> {
+	hazel::info!("TEST");
 	hazel::run(Sandbox::new()).await
 }

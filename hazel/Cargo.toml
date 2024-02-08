@@ -4,8 +4,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-bitflags = "2.4.2"
-colored = "2.1.0"
 iso8601-timestamp = "0.2.17"
 tap = "1.0.1"
 wgpu = "0.19.1"
