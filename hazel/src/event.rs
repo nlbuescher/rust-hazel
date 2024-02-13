@@ -1,11 +1,9 @@
+use crate::{Position, Size};
 use std::fmt::{Display, Formatter};
-
 use winit::{
 	dpi::{PhysicalPosition, PhysicalSize},
 	event::{Event as WinitEvent, WindowEvent},
 };
-
-use crate::{Position, Size};
 
 pub enum Event {
 	WindowClose,
@@ -33,20 +31,20 @@ impl TryFrom<WinitEvent<()>> for Event {
 	fn try_from(winit_event: WinitEvent<()>) -> Result<Self, Self::Error> {
 		let hazel_event = match winit_event {
 			WinitEvent::WindowEvent {
-				window_id: _,
 				event: WindowEvent::CloseRequested,
+				..
 			} => Event::WindowClose,
 
 			WinitEvent::WindowEvent {
-				window_id: _,
 				event: WindowEvent::Resized(PhysicalSize { width, height }),
+				..
 			} => Event::WindowResize {
 				size: Size { width, height },
 			},
 
 			WinitEvent::WindowEvent {
-				window_id: _,
 				event: WindowEvent::Focused(is_focused),
+				..
 			} => {
 				if is_focused {
 					Event::WindowFocus
@@ -56,19 +54,19 @@ impl TryFrom<WinitEvent<()>> for Event {
 			}
 
 			WinitEvent::WindowEvent {
-				window_id: _,
 				event: WindowEvent::Moved(PhysicalPosition { x, y }),
+				..
 			} => Event::WindowMoved {
 				offset: Position { x, y },
 			},
 
 			WinitEvent::WindowEvent {
-				window_id: _,
 				event:
 					WindowEvent::CursorMoved {
-						device_id: _,
 						position: PhysicalPosition { x, y },
+						..
 					},
+				..
 			} => Event::MouseMoved {
 				position: Position {
 					x: x as f32,
@@ -76,7 +74,7 @@ impl TryFrom<WinitEvent<()>> for Event {
 				},
 			},
 
-			_ => return Err(crate::Error::Core),
+			_ => return Err(crate::Error::Event),
 		};
 
 		Ok(hazel_event)
@@ -89,14 +87,16 @@ impl Display for Event {
 			Event::WindowClose => write!(fmt, "WindowCloseEvent"),
 
 			Event::WindowResize { size } => {
-				write!(fmt, "WindowResizeEvent: {size}")
+				write!(fmt, "WindowResizeEvent: ({}, {})", size.width, size.height)
 			}
 
 			Event::WindowFocus => write!(fmt, "WindowFocusEvent"),
 
 			Event::WindowLostFocus => write!(fmt, "WindowLostFocusEvent"),
 
-			Event::WindowMoved { offset } => write!(fmt, "WindowMovedEvent: {offset}"),
+			Event::WindowMoved { offset } => {
+				write!(fmt, "WindowMovedEvent: ({}, {})", offset.x, offset.y)
+			}
 
 			Event::AppTick => write!(fmt, "AppTickEvent"),
 
@@ -118,9 +118,13 @@ impl Display for Event {
 				write!(fmt, "MouseButtonReleasedEvent: {button}")
 			}
 
-			Event::MouseMoved { position } => write!(fmt, "MouseMovedEvent: {position}"),
+			Event::MouseMoved { position } => {
+				write!(fmt, "MouseMovedEvent: ({}, {})", position.x, position.y)
+			}
 
-			Event::MouseScrolled { offset } => write!(fmt, "MouseScrolledEvent: {offset}"),
+			Event::MouseScrolled { offset } => {
+				write!(fmt, "MouseScrolledEvent: ({}, {})", offset.x, offset.y)
+			}
 		}
 	}
 }

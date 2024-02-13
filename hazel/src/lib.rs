@@ -1,75 +1,39 @@
 pub mod event;
+
+mod context;
+mod error;
+mod layer;
 mod log;
 
+pub use crate::context::Context;
+pub use crate::error::Error;
 pub use crate::log::log;
 pub use crate::log::LogLevel;
-use crate::log::*;
-use std::fmt::Display;
-use std::{iter::once, sync::Arc};
+pub use layer::Layer;
+use layer::LayerStack;
+use wgpu::StoreOp;
+use wgpu::{
+	Color, CommandEncoderDescriptor, Device, DeviceDescriptor, Features, Instance,
+	InstanceDescriptor, Limits, LoadOp, Operations, PowerPreference, Queue,
+	RenderPassColorAttachment, RenderPassDescriptor, RequestAdapterOptions, Surface,
+	SurfaceConfiguration, SurfaceError, TextureFormat, TextureUsages, TextureViewDescriptor,
+};
+pub use winit::dpi::PhysicalPosition as Position;
+pub use winit::dpi::PhysicalSize as Size;
+use winit::event::WindowEvent;
+
+use std::iter::once;
+use std::sync::Arc;
 use tap::Pipe;
-use wgpu::*;
+use tap::Tap;
 use winit::dpi::LogicalSize;
 use winit::{
-	event::{Event, WindowEvent},
-	event_loop::{EventLoop, EventLoopWindowTarget},
+	event::Event,
+	event_loop::EventLoop,
 	window::{Window, WindowBuilder},
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default, Hash)]
-pub struct Position<T> {
-	x: T,
-	y: T,
-}
-
-impl<T: Display> Display for Position<T> {
-	fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		write!(fmt, "({}, {})", self.x, self.y)
-	}
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default, Hash)]
-pub struct Size<T> {
-	width: T,
-	height: T,
-}
-
-impl<T: Display> Display for Size<T> {
-	fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		write!(fmt, "({}, {})", self.width, self.height)
-	}
-}
-
-#[derive(Debug)]
-pub enum Error {
-	Core,
-}
-
-pub struct Context<'a, 'window> {
-	application: &'a mut Application<'window>,
-	event_loop: &'a EventLoopWindowTarget<()>,
-}
-
-impl<'a, 'window> Context<'a, 'window> {
-	fn new(
-		application: &'a mut Application<'window>,
-		event_loop: &'a EventLoopWindowTarget<()>,
-	) -> Self {
-		Context {
-			application,
-			event_loop,
-		}
-	}
-
-	pub fn exit(&self) {
-		self.event_loop.exit();
-	}
-
-	pub fn resize(&mut self, size: Size<u32>) {
-		self.application.resize(size);
-	}
-}
-
-struct Application<'window> {
+pub struct Application<'window> {
 	size: Size<u32>,
 	config: SurfaceConfiguration,
 	queue: Queue,
@@ -123,7 +87,7 @@ impl<'window> Application<'window> {
 			.formats
 			.iter()
 			.copied()
-			.find(|it| it.is_srgb())
+			.find(TextureFormat::is_srgb)
 			.unwrap_or(surface_caps.formats[0]);
 
 		let config = SurfaceConfiguration {
@@ -138,10 +102,7 @@ impl<'window> Application<'window> {
 		};
 
 		Self {
-			size: Size {
-				width: size.width,
-				height: size.height,
-			},
+			size,
 			config,
 			queue,
 			device,
@@ -151,9 +112,10 @@ impl<'window> Application<'window> {
 		}
 	}
 
-	pub fn run(
+	fn run(
 		mut self,
-		mut event_handler: impl FnMut(&mut Context, event::Event),
+		layer_stack: LayerStack,
+		mut event_handler: impl FnMut(&mut Context, &LayerStack, event::Event) + 'static,
 	) -> Result<(), crate::Error> {
 		match self.event_loop {
 			None => Err(Error::Core),
@@ -162,34 +124,41 @@ impl<'window> Application<'window> {
 				.take()
 				.unwrap()
 				.run(move |winit_event, event_loop| {
-					let mut context = Context::new(&mut self, event_loop);
 
 					match winit_event {
 						Event::WindowEvent {
-							window_id: _,
 							event: WindowEvent::RedrawRequested,
+							..
 						} => {
-							self.update();
 							match self.render() {
 								Ok(_) => {}
 								Err(SurfaceError::Lost) => self.resize(self.size),
 								Err(SurfaceError::OutOfMemory) => event_loop.exit(),
 								Err(error) => eprintln!("{error:?}"),
 							}
-						}
 
+							let context = Context::new(&mut self, event_loop);
+
+							layer_stack.iter().for_each(|(_, layer)| {
+								layer.on_update(&context);
+							});
+
+							self.on_update();
+						}
+  
 						Event::AboutToWait => {
 							self.window.request_redraw();
 						}
 
 						_ => {
 							if let Ok(event) = event::Event::try_from(winit_event) {
-								event_handler(&mut context, event);
+								let mut context = Context::new(&mut self, event_loop);
+								event_handler(&mut context, &layer_stack, event);
 							}
 						}
 					}
 				})
-				.map_err(|_| crate::Error::Core),
+				.map_err(|_| Error::Core),
 		}
 	}
 
@@ -200,7 +169,7 @@ impl<'window> Application<'window> {
 		self.surface.configure(&self.device, &self.config);
 	}
 
-	pub fn update(&self) {}
+	pub fn on_update(&mut self) {}
 
 	pub fn render(&mut self) -> Result<(), SurfaceError> {
 		let output = self.surface.get_current_texture()?;
@@ -247,17 +216,24 @@ pub trait Core {
 	fn on_window_resize(&self, context: &mut Context, size: Size<u32>);
 }
 
-pub async fn run(core: impl Core) -> Result<(), crate::Error> {
+pub async fn run(
+	core: impl Core + 'static,
+	configure_application: impl FnMut(&mut LayerStack),
+) -> Result<(), crate::Error> {
 	let application = Application::new().await;
-	application.run(move |context, event| {
-		core_info!("{event}");
+	let layer_stack = LayerStack::new().tap_mut(configure_application);
 
-		match event {
-			event::Event::WindowClose => core.on_window_close(context),
+	application.run(layer_stack, move |context, layer_stack, event| match event {
+		event::Event::WindowClose => core.on_window_close(context),
 
-			event::Event::WindowResize { size } => core.on_window_resize(context, size),
+		event::Event::WindowResize { size } => core.on_window_resize(context, size),
 
-			_ => {}
+		_ => {
+			for (_, layer) in layer_stack.iter() {
+				if layer.on_event(&event) {
+					break;
+				}
+			}
 		}
 	})
 }
