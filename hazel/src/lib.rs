@@ -39,12 +39,12 @@ pub struct Application {
 }
 
 impl Application {
-	pub async fn new() -> Self {
+	pub fn new(width: u32, height: u32) -> Self {
 		let event_loop = EventLoop::new();
 
 		let window = WindowBuilder::new()
 			.with_title("Hazel Engine")
-			.with_inner_size(LogicalSize::new(1280, 720))
+			.with_inner_size(LogicalSize::new(width, height))
 			.build(&event_loop)
 			.unwrap()
 			.pipe(Arc::new);
@@ -61,7 +61,7 @@ impl Application {
 				force_fallback_adapter: false,
 				compatible_surface: Some(&surface),
 			})
-			.await
+			.pipe(pollster::block_on)
 			.unwrap();
 
 		let (device, queue) = adapter
@@ -73,7 +73,7 @@ impl Application {
 				},
 				None,
 			)
-			.await
+			.pipe(pollster::block_on)
 			.unwrap();
 
 		let surface_caps = surface.get_capabilities(&adapter);
@@ -201,27 +201,26 @@ pub trait Core {
 	fn on_window_resize(&self, context: &mut Context, size: Size<u32>);
 }
 
-pub async fn run(
-	core: impl Core + 'static,
-	configure_application: impl FnMut(&mut LayerStack),
-) -> Result<(), crate::Error> {
-	let application = Application::new().await;
+pub fn run(core: impl Core + 'static, configure_application: impl FnMut(&mut LayerStack)) {
+	let application = Application::new(1280, 720);
 	let layer_stack = LayerStack::new().tap_mut(configure_application);
 
-	application.run(
-		layer_stack,
-		move |context, layer_stack, event| match event {
-			event::Event::WindowClose => core.on_window_close(context),
+	application
+		.run(
+			layer_stack,
+			move |context, layer_stack, event| match event {
+				event::Event::WindowClose => core.on_window_close(context),
 
-			event::Event::WindowResize { size } => core.on_window_resize(context, size),
+				event::Event::WindowResize { size } => core.on_window_resize(context, size),
 
-			_ => {
-				for (_, layer) in layer_stack.iter() {
-					if layer.on_event(&event) {
-						break;
+				_ => {
+					for (_, layer) in layer_stack.iter() {
+						if layer.on_event(&event) {
+							break;
+						}
 					}
 				}
-			}
-		},
-	)
+			},
+		)
+		.expect("something went wrong");
 }

@@ -35,12 +35,9 @@ impl Layer for ExampleLayer {
 	}
 }
 
-#[pollster::main]
-async fn main() {
+fn main() {
 	hazel::info!("TEST");
 	hazel::run(Sandbox::new(), |layer_stack| {
 		layer_stack.push_layer(Box::new(ExampleLayer {}));
-	})
-	.await
-	.unwrap();
+	});
 }

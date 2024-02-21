@@ -5,4 +5,3 @@ edition = "2021"
 
 [dependencies]
 hazel = { path = "../hazel" }
-pollster = { version = "0.3.0", features = ["macro"]}
