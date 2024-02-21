@@ -5,18 +5,18 @@ mod log;
 
 pub mod event;
 
-use std::{iter::once, sync::Arc};
+use std::{iter::once, ops::Deref, sync::Arc};
 use tap::{Pipe, Tap};
 use wgpu::{
 	Color, CommandEncoderDescriptor, Device, DeviceDescriptor, Features, Instance,
 	InstanceDescriptor, Limits, LoadOp, Operations, PowerPreference, Queue,
-	RenderPassColorAttachment, RenderPassDescriptor, RequestAdapterOptions, StoreOp, Surface,
+	RenderPassColorAttachment, RenderPassDescriptor, RequestAdapterOptions, Surface,
 	SurfaceConfiguration, SurfaceError, TextureFormat, TextureUsages, TextureViewDescriptor,
 };
 use winit::{
 	dpi::LogicalSize,
-	event::{Event, WindowEvent},
-	event_loop::EventLoop,
+	event::Event,
+	event_loop::{ControlFlow, EventLoop},
 	window::{Window, WindowBuilder},
 };
 
@@ -28,19 +28,19 @@ pub use crate::{
 };
 pub use winit::dpi::{PhysicalPosition as Position, PhysicalSize as Size};
 
-pub struct Application<'window> {
+pub struct Application {
 	size: Size<u32>,
 	config: SurfaceConfiguration,
 	queue: Queue,
 	device: Device,
-	surface: Surface<'window>,
+	surface: Surface,
 	window: Arc<Window>,
 	event_loop: Option<EventLoop<()>>,
 }
 
-impl<'window> Application<'window> {
+impl Application {
 	pub async fn new() -> Self {
-		let event_loop = EventLoop::new().unwrap();
+		let event_loop = EventLoop::new();
 
 		let window = WindowBuilder::new()
 			.with_title("Hazel Engine")
@@ -53,7 +53,7 @@ impl<'window> Application<'window> {
 
 		let instance = Instance::new(InstanceDescriptor::default());
 
-		let surface = instance.create_surface(window.clone()).unwrap();
+		let surface = unsafe { instance.create_surface(window.deref()).unwrap() };
 
 		let adapter = instance
 			.request_adapter(&RequestAdapterOptions {
@@ -68,8 +68,8 @@ impl<'window> Application<'window> {
 			.request_device(
 				&DeviceDescriptor {
 					label: None,
-					required_features: Features::empty(),
-					required_limits: Limits::default(),
+					features: Features::empty(),
+					limits: Limits::default(),
 				},
 				None,
 			)
@@ -91,7 +91,6 @@ impl<'window> Application<'window> {
 			width: size.width,
 			height: size.height,
 			present_mode: surface_caps.present_modes[0],
-			desired_maximum_frame_latency: 2,
 			alpha_mode: surface_caps.alpha_modes[0],
 			view_formats: vec![],
 		};
@@ -118,19 +117,16 @@ impl<'window> Application<'window> {
 				.event_loop
 				.take()
 				.unwrap()
-				.run(move |winit_event, event_loop| match winit_event {
-					Event::WindowEvent {
-						event: WindowEvent::RedrawRequested,
-						..
-					} => {
+				.run(move |winit_event, _, control_flow| match winit_event {
+					Event::RedrawRequested(_) => {
 						match self.render() {
 							Ok(_) => {}
 							Err(SurfaceError::Lost) => self.resize(self.size),
-							Err(SurfaceError::OutOfMemory) => event_loop.exit(),
+							Err(SurfaceError::OutOfMemory) => *control_flow = ControlFlow::Exit,
 							Err(error) => eprintln!("{error:?}"),
 						}
 
-						let context = Context::new(&mut self, event_loop);
+						let context = Context::new(&mut self, control_flow);
 
 						layer_stack.iter().for_each(|(_, layer)| {
 							layer.on_update(&context);
@@ -139,18 +135,17 @@ impl<'window> Application<'window> {
 						self.on_update();
 					}
 
-					Event::AboutToWait => {
+					Event::MainEventsCleared => {
 						self.window.request_redraw();
 					}
 
 					_ => {
 						if let Ok(event) = event::Event::try_from(winit_event) {
-							let mut context = Context::new(&mut self, event_loop);
+							let mut context = Context::new(&mut self, control_flow);
 							event_handler(&mut context, &layer_stack, event);
 						}
 					}
-				})
-				.map_err(|_| Error::Core),
+				}),
 		}
 	}
 
@@ -187,12 +182,10 @@ impl<'window> Application<'window> {
 							b: 1.0,
 							a: 1.0,
 						}),
-						store: StoreOp::Store,
+						store: true,
 					},
 				})],
 				depth_stencil_attachment: None,
-				timestamp_writes: None,
-				occlusion_query_set: None,
 			});
 		}
 

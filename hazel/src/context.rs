@@ -1,24 +1,24 @@
 use crate::{Application, Size};
-use winit::event_loop::EventLoopWindowTarget;
+use winit::event_loop::ControlFlow;
 
-pub struct Context<'a, 'window> {
-	pub(crate) application: &'a mut Application<'window>,
-	pub(crate) event_loop: &'a EventLoopWindowTarget<()>,
+pub struct Context<'a> {
+	pub(crate) application: &'a mut Application,
+	pub(crate) control_flow: &'a mut ControlFlow,
 }
 
-impl<'a, 'window> Context<'a, 'window> {
+impl<'a> Context<'a> {
 	pub(crate) fn new(
-		application: &'a mut Application<'window>,
-		event_loop: &'a EventLoopWindowTarget<()>,
+		application: &'a mut Application,
+		control_flow: &'a mut ControlFlow,
 	) -> Self {
 		Context {
 			application,
-			event_loop,
+			control_flow,
 		}
 	}
 
-	pub fn exit(&self) {
-		self.event_loop.exit();
+	pub fn exit(&mut self) {
+		*self.control_flow = ControlFlow::Exit;
 	}
 
 	pub fn resize(&mut self, size: Size<u32>) {

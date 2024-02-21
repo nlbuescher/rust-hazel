@@ -4,7 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+imgui = { version = "0.11.0", features = ["docking"] }
+imgui-wgpu = "0.24.0"
+imgui-winit-support = "0.11.0"
 iso8601-timestamp = "0.2.17"
 tap = "1.0.1"
-wgpu = "0.19.1"
-winit = "0.29.10"
+wgpu = "0.17.2"
+winit = "0.27.5"

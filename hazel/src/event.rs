@@ -25,7 +25,7 @@ pub enum Event {
 	MouseScrolled { offset: Position<f32> },
 }
 
-impl TryFrom<WinitEvent<()>> for Event {
+impl TryFrom<WinitEvent<'_, ()>> for Event {
 	type Error = crate::Error;
 
 	fn try_from(winit_event: WinitEvent<()>) -> Result<Self, Self::Error> {
