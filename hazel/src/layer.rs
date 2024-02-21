@@ -1,5 +1,4 @@
 use crate::{event::Event, Context};
-use std::slice::Iter;
 use tap::{Pipe, Tap};
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, Debug, Hash)]
@@ -21,19 +20,23 @@ pub trait Layer {
 pub struct LayerStack {
 	layers: Vec<(LayerId, Box<dyn Layer>)>,
 	layer_insert: usize,
+	next_id: usize,
 }
 
 impl LayerStack {
 	pub fn new() -> Self {
-        Self { ..Default::default() }
+		Self {
+			..Default::default()
+		}
 	}
 
-	pub fn iter(&self) -> Iter<'_, (LayerId, Box<dyn Layer>)> {
+	pub fn iter(&self) -> impl Iterator<Item = &(LayerId, Box<dyn Layer>)> {
 		self.layers.iter()
 	}
 
 	pub fn push_layer(&mut self, layer: Box<dyn Layer>) -> LayerId {
-		let layer_id = self.layers.last().map_or(0, |it| it.0 .0 + 1).pipe(LayerId);
+		let layer_id = LayerId(self.next_id);
+		self.next_id += 1;
 
 		layer.on_attach();
 
@@ -44,7 +47,8 @@ impl LayerStack {
 	}
 
 	pub fn push_overlay(&mut self, overlay: Box<dyn Layer>) -> LayerId {
-		let layer_id = self.layers.last().map_or(0, |it| it.0 .0 + 1).pipe(LayerId);
+		let layer_id = LayerId(self.next_id);
+		self.next_id += 1;
 
 		overlay.on_attach();
 

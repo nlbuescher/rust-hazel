@@ -1,6 +1,5 @@
-use std::fmt::{Display, Formatter, Result};
-
 use iso8601_timestamp::Timestamp;
+use std::fmt::{Display, Formatter, Result};
 
 #[derive(Clone, Copy)]
 pub enum LogLevel {

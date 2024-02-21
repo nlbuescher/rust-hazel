@@ -1,37 +1,32 @@
-pub mod event;
-
 mod context;
 mod error;
 mod layer;
 mod log;
 
-pub use crate::context::Context;
-pub use crate::error::Error;
-pub use crate::log::log;
-pub use crate::log::LogLevel;
-pub use layer::Layer;
-use layer::LayerStack;
-use wgpu::StoreOp;
+pub mod event;
+
+use std::{iter::once, sync::Arc};
+use tap::{Pipe, Tap};
 use wgpu::{
 	Color, CommandEncoderDescriptor, Device, DeviceDescriptor, Features, Instance,
 	InstanceDescriptor, Limits, LoadOp, Operations, PowerPreference, Queue,
-	RenderPassColorAttachment, RenderPassDescriptor, RequestAdapterOptions, Surface,
+	RenderPassColorAttachment, RenderPassDescriptor, RequestAdapterOptions, StoreOp, Surface,
 	SurfaceConfiguration, SurfaceError, TextureFormat, TextureUsages, TextureViewDescriptor,
 };
-pub use winit::dpi::PhysicalPosition as Position;
-pub use winit::dpi::PhysicalSize as Size;
-use winit::event::WindowEvent;
-
-use std::iter::once;
-use std::sync::Arc;
-use tap::Pipe;
-use tap::Tap;
-use winit::dpi::LogicalSize;
 use winit::{
-	event::Event,
+	dpi::LogicalSize,
+	event::{Event, WindowEvent},
 	event_loop::EventLoop,
 	window::{Window, WindowBuilder},
 };
+
+pub use crate::{
+	context::Context,
+	error::Error,
+	layer::{Layer, LayerStack},
+	log::{log, LogLevel},
+};
+pub use winit::dpi::{PhysicalPosition as Position, PhysicalSize as Size};
 
 pub struct Application<'window> {
 	size: Size<u32>,
@@ -123,38 +118,35 @@ impl<'window> Application<'window> {
 				.event_loop
 				.take()
 				.unwrap()
-				.run(move |winit_event, event_loop| {
-
-					match winit_event {
-						Event::WindowEvent {
-							event: WindowEvent::RedrawRequested,
-							..
-						} => {
-							match self.render() {
-								Ok(_) => {}
-								Err(SurfaceError::Lost) => self.resize(self.size),
-								Err(SurfaceError::OutOfMemory) => event_loop.exit(),
-								Err(error) => eprintln!("{error:?}"),
-							}
-
-							let context = Context::new(&mut self, event_loop);
-
-							layer_stack.iter().for_each(|(_, layer)| {
-								layer.on_update(&context);
-							});
-
-							self.on_update();
-						}
-  
-						Event::AboutToWait => {
-							self.window.request_redraw();
+				.run(move |winit_event, event_loop| match winit_event {
+					Event::WindowEvent {
+						event: WindowEvent::RedrawRequested,
+						..
+					} => {
+						match self.render() {
+							Ok(_) => {}
+							Err(SurfaceError::Lost) => self.resize(self.size),
+							Err(SurfaceError::OutOfMemory) => event_loop.exit(),
+							Err(error) => eprintln!("{error:?}"),
 						}
 
-						_ => {
-							if let Ok(event) = event::Event::try_from(winit_event) {
-								let mut context = Context::new(&mut self, event_loop);
-								event_handler(&mut context, &layer_stack, event);
-							}
+						let context = Context::new(&mut self, event_loop);
+
+						layer_stack.iter().for_each(|(_, layer)| {
+							layer.on_update(&context);
+						});
+
+						self.on_update();
+					}
+
+					Event::AboutToWait => {
+						self.window.request_redraw();
+					}
+
+					_ => {
+						if let Ok(event) = event::Event::try_from(winit_event) {
+							let mut context = Context::new(&mut self, event_loop);
+							event_handler(&mut context, &layer_stack, event);
 						}
 					}
 				})
@@ -223,17 +215,20 @@ pub async fn run(
 	let application = Application::new().await;
 	let layer_stack = LayerStack::new().tap_mut(configure_application);
 
-	application.run(layer_stack, move |context, layer_stack, event| match event {
-		event::Event::WindowClose => core.on_window_close(context),
+	application.run(
+		layer_stack,
+		move |context, layer_stack, event| match event {
+			event::Event::WindowClose => core.on_window_close(context),
 
-		event::Event::WindowResize { size } => core.on_window_resize(context, size),
+			event::Event::WindowResize { size } => core.on_window_resize(context, size),
 
-		_ => {
-			for (_, layer) in layer_stack.iter() {
-				if layer.on_event(&event) {
-					break;
+			_ => {
+				for (_, layer) in layer_stack.iter() {
+					if layer.on_event(&event) {
+						break;
+					}
 				}
 			}
-		}
-	})
+		},
+	)
 }

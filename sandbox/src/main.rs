@@ -21,10 +21,14 @@ impl hazel::Core for Sandbox {
 struct ExampleLayer {}
 
 impl Layer for ExampleLayer {
-    fn get_name(&self) -> &str { "Example Layer" }
+	fn get_name(&self) -> &str {
+		"Example Layer"
+	}
+
 	fn on_update(&self, _: &Context) {
 		hazel::info!("ExampleLayer::on_update");
 	}
+
 	fn on_event(&self, event: &Event) -> bool {
 		hazel::info!("{event}");
 		true
@@ -32,9 +36,11 @@ impl Layer for ExampleLayer {
 }
 
 #[pollster::main]
-async fn main() -> Result<(), hazel::Error> {
+async fn main() {
 	hazel::info!("TEST");
 	hazel::run(Sandbox::new(), |layer_stack| {
-		layer_stack.push_layer(Box::new(ExampleLayer{}));
-	}).await
+		layer_stack.push_layer(Box::new(ExampleLayer {}));
+	})
+	.await
+	.unwrap();
 }
