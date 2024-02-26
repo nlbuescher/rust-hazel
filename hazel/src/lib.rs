@@ -1,12 +1,13 @@
 mod context;
 mod error;
+mod imgui;
 mod layer;
 mod log;
 
 pub mod event;
 
 use std::{iter::once, ops::Deref, sync::Arc};
-use tap::{Pipe, Tap};
+use tap::Pipe;
 use wgpu::{
 	Color, CommandEncoderDescriptor, Device, DeviceDescriptor, Features, Instance,
 	InstanceDescriptor, Limits, LoadOp, Operations, PowerPreference, Queue,
@@ -108,8 +109,8 @@ impl Application {
 
 	fn run(
 		mut self,
-		layer_stack: LayerStack,
-		mut event_handler: impl FnMut(&mut Context, &LayerStack, event::Event) + 'static,
+		mut layer_stack: LayerStack,
+		mut event_handler: impl FnMut(&mut Context, event::Event) + 'static,
 	) -> Result<(), crate::Error> {
 		match self.event_loop {
 			None => Err(Error::Core),
@@ -126,9 +127,9 @@ impl Application {
 							Err(error) => eprintln!("{error:?}"),
 						}
 
-						let context = Context::new(&mut self, control_flow);
+						let context = Context::new(&mut self, &mut layer_stack, Some(control_flow));
 
-						layer_stack.iter().for_each(|(_, layer)| {
+						context.layer_stack.iter().for_each(|(_, layer)| {
 							layer.on_update(&context);
 						});
 
@@ -141,8 +142,8 @@ impl Application {
 
 					_ => {
 						if let Ok(event) = event::Event::try_from(winit_event) {
-							let mut context = Context::new(&mut self, control_flow);
-							event_handler(&mut context, &layer_stack, event);
+							let mut context = Context::new(&mut self, &mut layer_stack, Some(control_flow));
+							event_handler(&mut context, event);
 						}
 					}
 				}),
@@ -201,20 +202,21 @@ pub trait Core {
 	fn on_window_resize(&self, context: &mut Context, size: Size<u32>);
 }
 
-pub fn run(core: impl Core + 'static, configure_application: impl FnMut(&mut LayerStack)) {
-	let application = Application::new(1280, 720);
-	let layer_stack = LayerStack::new().tap_mut(configure_application);
+pub fn run(core: impl Core + 'static, mut configure: impl FnMut(&mut Context)) {
+	let mut application = Application::new(1280, 720);
+	let mut layer_stack = LayerStack::new();
+	configure(&mut Context::new(&mut application, &mut layer_stack, None));
 
 	application
 		.run(
 			layer_stack,
-			move |context, layer_stack, event| match event {
+			move |context, event| match event {
 				event::Event::WindowClose => core.on_window_close(context),
 
 				event::Event::WindowResize { size } => core.on_window_resize(context, size),
 
 				_ => {
-					for (_, layer) in layer_stack.iter() {
+					for (_, layer) in context.layer_stack.iter() {
 						if layer.on_event(&event) {
 							break;
 						}

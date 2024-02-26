@@ -8,8 +8,8 @@ pub trait Layer {
 	fn get_name(&self) -> &str {
 		"Layer"
 	}
-	fn on_attach(&self) {}
-	fn on_detach(&self) {}
+	fn on_attach(&self, _: &Context) {}
+	fn on_detach(&self, _: &Context) {}
 	fn on_update(&self, _: &Context) {}
 	fn on_event(&self, _: &Event) -> bool {
 		false
@@ -36,23 +36,21 @@ impl LayerStack {
 
 	pub fn push_layer(&mut self, layer: Box<dyn Layer>) -> LayerId {
 		let layer_id = LayerId(self.next_id);
-		self.next_id += 1;
-
-		layer.on_attach();
 
 		self.layers.insert(self.layer_insert, (layer_id, layer));
+
 		self.layer_insert += 1;
+		self.next_id += 1;
 
 		layer_id
 	}
 
 	pub fn push_overlay(&mut self, overlay: Box<dyn Layer>) -> LayerId {
 		let layer_id = LayerId(self.next_id);
-		self.next_id += 1;
-
-		overlay.on_attach();
 
 		self.layers.push((layer_id, overlay));
+
+		self.next_id += 1;
 
 		layer_id
 	}
@@ -70,10 +68,7 @@ impl LayerStack {
 				.layers
 				.remove(index)
 				.1
-				.tap(|it| {
-					self.layer_insert -= 1;
-					it.on_detach();
-				})
+				.tap(|_| self.layer_insert -= 1)
 				.pipe(Some),
 		}
 	}
@@ -87,12 +82,7 @@ impl LayerStack {
 
 		match entry {
 			None => None,
-			Some((index, _)) => self
-				.layers
-				.remove(index)
-				.1
-				.tap(|it| it.on_detach())
-				.pipe(Some),
+			Some((index, _)) => self.layers.remove(index).1.pipe(Some),
 		}
 	}
 }

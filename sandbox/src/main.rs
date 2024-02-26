@@ -37,7 +37,7 @@ impl Layer for ExampleLayer {
 
 fn main() {
 	hazel::info!("TEST");
-	hazel::run(Sandbox::new(), |layer_stack| {
-		layer_stack.push_layer(Box::new(ExampleLayer {}));
+	hazel::run(Sandbox::new(), |context| {
+		context.push_layer(Box::new(ExampleLayer {}));
 	});
 }
