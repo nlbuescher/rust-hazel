@@ -14,10 +14,7 @@ use std::{
 };
 use tap::Pipe;
 use wgpu::{
-	Color, CommandEncoderDescriptor, Device, DeviceDescriptor, Features, Instance,
-	InstanceDescriptor, Limits, LoadOp, Operations, PowerPreference, Queue,
-	RenderPassColorAttachment, RenderPassDescriptor, RequestAdapterOptions, Surface,
-	SurfaceConfiguration, SurfaceError, TextureFormat, TextureUsages, TextureViewDescriptor,
+	Color, CommandEncoderDescriptor, Device, DeviceDescriptor, Features, Instance, InstanceDescriptor, Limits, LoadOp, Operations, PowerPreference, Queue, RenderPassColorAttachment, RenderPassDescriptor, RequestAdapterOptions, Surface, SurfaceConfiguration, SurfaceError, SurfaceTexture, TextureFormat, TextureUsages, TextureView, TextureViewDescriptor
 };
 use winit::{
 	dpi::LogicalSize,
@@ -43,6 +40,8 @@ pub struct Application {
 	surface: Surface,
 	window: Arc<Window>,
 	event_loop: Option<EventLoop<()>>,
+	view: Option<TextureView>,
+	output: Option<SurfaceTexture>,
 }
 
 impl Application {
@@ -110,6 +109,8 @@ impl Application {
 			surface,
 			window,
 			event_loop: Some(event_loop),
+			view: None,
+			output: None,
 		}
 	}
 
@@ -131,7 +132,7 @@ impl Application {
 
 						match winit_event {
 							Event::RedrawRequested(_) => {
-								match self.render() {
+								match self.being_frame() {
 									Ok(_) => {},
 									Err(SurfaceError::Lost) => self.resize(self.size),
 									Err(SurfaceError::OutOfMemory) => {
@@ -152,7 +153,7 @@ impl Application {
 									layer.on_update(&mut context);
 								}
 
-								self.on_update();
+								self.end_frame();
 							},
 
 							Event::MainEventsCleared => {
@@ -185,9 +186,13 @@ impl Application {
 		self.surface.configure(&self.device, &self.config);
 	}
 
-	pub fn on_update(&mut self) {}
+	pub fn end_frame(&mut self) {
+		if let Some(output) = self.output.take() {
+			output.present();
+		}
+	}
 
-	pub fn render(&mut self) -> Result<(), SurfaceError> {
+	pub fn being_frame(&mut self) -> Result<(), SurfaceError> {
 		//TODO: keep a reference to the encoder to enable rendering on the same command
 		let output = self.surface.get_current_texture()?;
 		let view = output
@@ -220,7 +225,9 @@ impl Application {
 		}
 
 		self.queue.submit(once(encoder.finish()));
-		output.present();
+
+		self.view = Some(view);
+		self.output = Some(output);
 
 		Ok(())
 	}

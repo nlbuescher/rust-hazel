@@ -2,9 +2,9 @@ use crate::{Layer, LayerContext};
 use imgui::{FontConfig, FontSource};
 use imgui_wgpu::{Renderer, RendererConfig};
 use imgui_winit_support::{HiDpiMode, WinitPlatform};
+use std::iter::once;
 use wgpu::{
 	Color, CommandEncoderDescriptor, Operations, RenderPassColorAttachment, RenderPassDescriptor,
-	TextureViewDescriptor,
 };
 
 pub struct ImGuiLayer {
@@ -84,18 +84,13 @@ impl Layer for ImGuiLayer {
 	}
 
 	fn on_update(&mut self, context: &mut LayerContext) {
-		if let Some(ref mut renderer) = self.renderer {
+		//TODO abstract submitting passes into the rendering pipeline
+		if let (Some(ref mut renderer), Some(ref view)) =
+			(&mut self.renderer, &context.application.view)
+		{
 			let imgui = &mut self.imgui;
 
 			imgui.io_mut().update_delta_time(context.delta_time());
-
-			let frame = match context.application.surface.get_current_texture() {
-				Ok(frame) => frame,
-				Err(error) => {
-					eprintln!("dropped frame: {error:?}");
-					return;
-				},
-			};
 
 			self.platform
 				.prepare_frame(imgui.io_mut(), &context.application.window)
@@ -111,34 +106,32 @@ impl Layer for ImGuiLayer {
 				.application
 				.device
 				.create_command_encoder(&CommandEncoderDescriptor { label: None });
-			let view = frame.texture.create_view(&TextureViewDescriptor::default());
-			let mut render_pass = encoder.begin_render_pass(&RenderPassDescriptor {
-				label: None,
-				color_attachments: &[Some(RenderPassColorAttachment {
-					view: &view,
-					resolve_target: None,
-					ops: Operations {
-						load: wgpu::LoadOp::Clear(self.clear_color),
-						store: true,
-					},
-				})],
-				depth_stencil_attachment: None,
-			});
 
-			renderer
-				.render(
-					imgui.render(),
-					&context.application.queue,
-					&context.application.device,
-					&mut render_pass,
-				)
-				.expect("Renderer failed");
+			{
+				let mut render_pass = encoder.begin_render_pass(&RenderPassDescriptor {
+					label: None,
+					color_attachments: &[Some(RenderPassColorAttachment {
+						view: &view,
+						resolve_target: None,
+						ops: Operations {
+							load: wgpu::LoadOp::Clear(self.clear_color),
+							store: true,
+						},
+					})],
+					depth_stencil_attachment: None,
+				});
 
-			drop(render_pass);
+				renderer
+					.render(
+						imgui.render(),
+						&context.application.queue,
+						&context.application.device,
+						&mut render_pass,
+					)
+					.expect("Renderer failed");
+			}
 
-			context.application.queue.submit(Some(encoder.finish()));
-
-			frame.present();
+			context.application.queue.submit(once(encoder.finish()));
 		}
 	}
 }
