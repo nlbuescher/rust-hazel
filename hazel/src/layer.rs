@@ -1,4 +1,6 @@
-use crate::{event::Event, Context};
+use std::{ops::{Index, IndexMut}, slice::SliceIndex};
+
+use crate::{event::Event, LayerContext};
 use tap::{Pipe, Tap};
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, Debug, Hash)]
@@ -8,9 +10,9 @@ pub trait Layer {
 	fn get_name(&self) -> &str {
 		"Layer"
 	}
-	fn on_attach(&self, _: &Context) {}
-	fn on_detach(&self, _: &Context) {}
-	fn on_update(&self, _: &Context) {}
+	fn on_attach(&mut self, _: &mut LayerContext) {}
+	fn on_detach(&mut self, _: &mut LayerContext) {}
+	fn on_update(&mut self, _: &mut LayerContext) {}
 	fn on_event(&self, _: &Event) -> bool {
 		false
 	}
@@ -28,6 +30,10 @@ impl LayerStack {
 		Self {
 			..Default::default()
 		}
+	}
+
+	pub fn len(&self) -> usize {
+		self.layers.len()
 	}
 
 	pub fn iter(&self) -> impl Iterator<Item = &(LayerId, Box<dyn Layer>)> {
@@ -84,5 +90,19 @@ impl LayerStack {
 			None => None,
 			Some((index, _)) => self.layers.remove(index).1.pipe(Some),
 		}
+	}
+}
+
+impl<I: SliceIndex<[(LayerId, Box<dyn Layer>)]>> Index<I> for LayerStack {
+	type Output = I::Output;
+
+	fn index(&self, index: I) -> &Self::Output {
+		Index::index(&self.layers, index)
+	}
+}
+
+impl<I: SliceIndex<[(LayerId, Box<dyn Layer>)]>> IndexMut<I> for LayerStack {
+	fn index_mut(&mut self, index: I) -> &mut Self::Output {
+		IndexMut::index_mut(&mut self.layers, index)
 	}
 }

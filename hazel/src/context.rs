@@ -1,37 +1,76 @@
+use std::time::Duration;
 use crate::{layer::LayerId, Application, Layer, LayerStack, Size};
 use winit::event_loop::ControlFlow;
 
-pub struct Context<'a> {
+pub struct LayerContext<'a> {
+	delta_time: Duration,
 	pub(crate) application: &'a mut Application,
-	pub(crate) layer_stack: &'a mut LayerStack,
 	pub(crate) control_flow: Option<&'a mut ControlFlow>,
 }
 
-impl<'a> Context<'a> {
+impl<'a> LayerContext<'a> {
+	pub fn new(
+		delta_time: Duration,
+		application: &'a mut Application,
+		control_flow: Option<&'a mut ControlFlow>,
+	) -> Self {
+		Self {
+			delta_time,
+			application,
+			control_flow,
+		}
+	}
+
+	pub fn delta_time(&self) -> Duration {
+		self.delta_time
+	}
+}
+
+pub struct EventContext<'a> {
+	pub(crate) layer_context: LayerContext<'a>,
+	pub(crate) layer_stack: &'a mut LayerStack,
+}
+
+impl<'a> EventContext<'a> {
 	pub(crate) fn new(
+		delta_time: Duration,
 		application: &'a mut Application,
 		layer_stack: &'a mut LayerStack,
 		control_flow: Option<&'a mut ControlFlow>,
 	) -> Self {
 		Self {
-			application,
+			layer_context: LayerContext::new(delta_time, application, control_flow),
 			layer_stack,
-			control_flow,
 		}
 	}
 
-	pub fn push_layer(&mut self, layer: Box<dyn Layer>) -> LayerId {
-		layer.on_attach(self);
+	pub fn push_layer(&mut self, mut layer: Box<dyn Layer>) -> LayerId {
+		layer.on_attach(&mut self.layer_context);
 		self.layer_stack.push_layer(layer)
 	}
 
+	pub fn push_overlay(&mut self, mut overlay: Box<dyn Layer>) -> LayerId {
+		overlay.on_attach(&mut self.layer_context);
+		self.layer_stack.push_overlay(overlay)
+	}
+
+	pub fn pop_layer(&mut self, mut layer: Box<dyn Layer>) -> LayerId {
+		layer.on_detach(&mut self.layer_context);
+		self.layer_stack.push_layer(layer)
+	}
+
+	pub fn pop_overlay(&mut self, mut overlay: Box<dyn Layer>) -> LayerId {
+		overlay.on_detach(&mut self.layer_context);
+		self.layer_stack.push_overlay(overlay)
+	}
+
 	pub fn exit(&mut self) {
-		if let Some(ref mut control_flow) = self.control_flow {
+		if let Some(ref mut control_flow) = self.layer_context.control_flow {
 			**control_flow = ControlFlow::Exit;
 		}
 	}
 
 	pub fn resize(&mut self, size: Size<u32>) {
-		self.application.resize(size);
+		self.layer_context.application.resize(size);
 	}
 }

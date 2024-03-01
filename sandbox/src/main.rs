@@ -1,4 +1,4 @@
-use hazel::{event::Event, Context, Layer, Size};
+use hazel::{event::Event, EventContext, Layer, LayerContext, Size};
 
 struct Sandbox {}
 
@@ -9,23 +9,29 @@ impl Sandbox {
 }
 
 impl hazel::Core for Sandbox {
-	fn on_window_close(&self, context: &mut Context) {
+	fn on_window_close(&self, context: &mut EventContext) {
 		context.exit()
 	}
 
-	fn on_window_resize(&self, context: &mut Context, size: Size<u32>) {
+	fn on_window_resize(&self, context: &mut EventContext, size: Size<u32>) {
 		context.resize(size);
 	}
 }
 
 struct ExampleLayer {}
 
+impl ExampleLayer {
+	pub fn new() -> Self {
+		Self {}
+	}
+}
+
 impl Layer for ExampleLayer {
 	fn get_name(&self) -> &str {
 		"Example Layer"
 	}
 
-	fn on_update(&self, _: &Context) {
+	fn on_update(&mut self, _: &mut LayerContext) {
 		hazel::info!("ExampleLayer::on_update");
 	}
 
@@ -38,6 +44,7 @@ impl Layer for ExampleLayer {
 fn main() {
 	hazel::info!("TEST");
 	hazel::run(Sandbox::new(), |context| {
-		context.push_layer(Box::new(ExampleLayer {}));
+		context.push_layer(Box::new(ExampleLayer::new()));
+		context.push_layer(Box::new(hazel::ImGuiLayer::new()));
 	});
 }

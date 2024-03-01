@@ -6,7 +6,12 @@ mod log;
 
 pub mod event;
 
-use std::{iter::once, ops::Deref, sync::Arc};
+use std::{
+	iter::once,
+	ops::Deref,
+	sync::Arc,
+	time::{Duration, Instant},
+};
 use tap::Pipe;
 use wgpu::{
 	Color, CommandEncoderDescriptor, Device, DeviceDescriptor, Features, Instance,
@@ -22,8 +27,9 @@ use winit::{
 };
 
 pub use crate::{
-	context::Context,
+	context::{EventContext, LayerContext},
 	error::Error,
+	imgui::ImGuiLayer,
 	layer::{Layer, LayerStack},
 	log::{log, LogLevel},
 };
@@ -110,43 +116,65 @@ impl Application {
 	fn run(
 		mut self,
 		mut layer_stack: LayerStack,
-		mut event_handler: impl FnMut(&mut Context, event::Event) + 'static,
+		mut event_handler: impl FnMut(&mut EventContext, event::Event) + 'static,
 	) -> Result<(), crate::Error> {
 		match self.event_loop {
 			None => Err(Error::Core),
-			Some(_) => self
-				.event_loop
-				.take()
-				.unwrap()
-				.run(move |winit_event, _, control_flow| match winit_event {
-					Event::RedrawRequested(_) => {
-						match self.render() {
-							Ok(_) => {}
-							Err(SurfaceError::Lost) => self.resize(self.size),
-							Err(SurfaceError::OutOfMemory) => *control_flow = ControlFlow::Exit,
-							Err(error) => eprintln!("{error:?}"),
+			Some(_) => {
+				let mut last_update = Instant::now();
+
+				self.event_loop
+					.take()
+					.unwrap()
+					.run(move |winit_event, _, control_flow| {
+						let now = Instant::now();
+
+						match winit_event {
+							Event::RedrawRequested(_) => {
+								match self.render() {
+									Ok(_) => {},
+									Err(SurfaceError::Lost) => self.resize(self.size),
+									Err(SurfaceError::OutOfMemory) => {
+										*control_flow = ControlFlow::Exit
+									},
+									Err(error) => eprintln!("{error:?}"),
+								}
+
+								for i in 0..layer_stack.len() {
+									let (_, ref mut layer) = layer_stack[i];
+
+									let mut context = LayerContext::new(
+										now - last_update,
+										&mut self,
+										Some(control_flow),
+									);
+
+									layer.on_update(&mut context);
+								}
+
+								self.on_update();
+							},
+
+							Event::MainEventsCleared => {
+								self.window.request_redraw();
+							},
+
+							_ => {
+								if let Ok(event) = event::Event::try_from(winit_event) {
+									let mut context = EventContext::new(
+										now - last_update,
+										&mut self,
+										&mut layer_stack,
+										Some(control_flow),
+									);
+									event_handler(&mut context, event);
+								}
+							},
 						}
 
-						let context = Context::new(&mut self, &mut layer_stack, Some(control_flow));
-
-						context.layer_stack.iter().for_each(|(_, layer)| {
-							layer.on_update(&context);
-						});
-
-						self.on_update();
-					}
-
-					Event::MainEventsCleared => {
-						self.window.request_redraw();
-					}
-
-					_ => {
-						if let Ok(event) = event::Event::try_from(winit_event) {
-							let mut context = Context::new(&mut self, &mut layer_stack, Some(control_flow));
-							event_handler(&mut context, event);
-						}
-					}
-				}),
+						last_update = now;
+					})
+			},
 		}
 	}
 
@@ -160,6 +188,7 @@ impl Application {
 	pub fn on_update(&mut self) {}
 
 	pub fn render(&mut self) -> Result<(), SurfaceError> {
+		//TODO: keep a reference to the encoder to enable rendering on the same command
 		let output = self.surface.get_current_texture()?;
 		let view = output
 			.texture
@@ -198,31 +227,35 @@ impl Application {
 }
 
 pub trait Core {
-	fn on_window_close(&self, context: &mut Context);
-	fn on_window_resize(&self, context: &mut Context, size: Size<u32>);
+	fn on_window_close(&self, context: &mut EventContext);
+	fn on_window_resize(&self, context: &mut EventContext, size: Size<u32>);
 }
 
-pub fn run(core: impl Core + 'static, mut configure: impl FnMut(&mut Context)) {
+pub fn run(core: impl Core + 'static, mut configure: impl FnMut(&mut EventContext)) {
 	let mut application = Application::new(1280, 720);
 	let mut layer_stack = LayerStack::new();
-	configure(&mut Context::new(&mut application, &mut layer_stack, None));
+	configure(&mut EventContext::new(
+		Duration::ZERO,
+		&mut application,
+		&mut layer_stack,
+		None,
+	));
 
 	application
-		.run(
-			layer_stack,
-			move |context, event| match event {
-				event::Event::WindowClose => core.on_window_close(context),
+		.run(layer_stack, move |context, event| match event {
+			event::Event::WindowClose => core.on_window_close(context),
 
-				event::Event::WindowResize { size } => core.on_window_resize(context, size),
+			event::Event::WindowResize { size } => core.on_window_resize(context, size),
 
-				_ => {
-					for (_, layer) in context.layer_stack.iter() {
-						if layer.on_event(&event) {
-							break;
-						}
+			_ => {
+				for i in 0..context.layer_stack.len() {
+					let (_, ref mut layer) = context.layer_stack[i];
+
+					if layer.on_event(&event) {
+						break;
 					}
 				}
 			},
-		)
+		})
 		.expect("something went wrong");
 }

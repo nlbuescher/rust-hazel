@@ -51,7 +51,7 @@ impl TryFrom<WinitEvent<'_, ()>> for Event {
 				} else {
 					Event::WindowLostFocus
 				}
-			}
+			},
 
 			WinitEvent::WindowEvent {
 				event: WindowEvent::Moved(PhysicalPosition { x, y }),
@@ -88,7 +88,7 @@ impl Display for Event {
 
 			Event::WindowResize { size } => {
 				write!(fmt, "WindowResizeEvent: ({}, {})", size.width, size.height)
-			}
+			},
 
 			Event::WindowFocus => write!(fmt, "WindowFocusEvent"),
 
@@ -96,7 +96,7 @@ impl Display for Event {
 
 			Event::WindowMoved { offset } => {
 				write!(fmt, "WindowMovedEvent: ({}, {})", offset.x, offset.y)
-			}
+			},
 
 			Event::AppTick => write!(fmt, "AppTickEvent"),
 
@@ -106,25 +106,25 @@ impl Display for Event {
 
 			Event::KeyPressed { key, repeat_count } => {
 				write!(fmt, "KeyPressedEvent: {key} ({repeat_count} repeats)")
-			}
+			},
 
 			Event::KeyReleased { key } => write!(fmt, "KeyReleasedEvent: {key}"),
 
 			Event::MouseButtonPressed { button } => {
 				write!(fmt, "MouseButtonPressedEvent: {button}")
-			}
+			},
 
 			Event::MouseButtonReleased { button } => {
 				write!(fmt, "MouseButtonReleasedEvent: {button}")
-			}
+			},
 
 			Event::MouseMoved { position } => {
 				write!(fmt, "MouseMovedEvent: ({}, {})", position.x, position.y)
-			}
+			},
 
 			Event::MouseScrolled { offset } => {
 				write!(fmt, "MouseScrolledEvent: ({}, {})", offset.x, offset.y)
-			}
+			},
 		}
 	}
 }
