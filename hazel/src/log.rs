@@ -184,12 +184,4 @@ macro_rules! core_error {
 }
 
 #[allow(unused)]
-pub(crate) use core_debug;
-#[allow(unused)]
-pub(crate) use core_error;
-#[allow(unused)]
-pub(crate) use core_info;
-#[allow(unused)]
-pub(crate) use core_trace;
-#[allow(unused)]
-pub(crate) use core_warn;
+pub(crate) use {core_debug, core_error, core_info, core_trace, core_warn};

@@ -6,6 +6,7 @@ mod log;
 
 pub mod event;
 
+use event::Event;
 use std::{
 	iter::once,
 	ops::Deref,
@@ -14,14 +15,20 @@ use std::{
 };
 use tap::Pipe;
 use wgpu::{
-	Color, CommandEncoderDescriptor, Device, DeviceDescriptor, Features, Instance, InstanceDescriptor, Limits, LoadOp, Operations, PowerPreference, Queue, RenderPassColorAttachment, RenderPassDescriptor, RequestAdapterOptions, Surface, SurfaceConfiguration, SurfaceError, SurfaceTexture, TextureFormat, TextureUsages, TextureView, TextureViewDescriptor
+	Color, CommandEncoderDescriptor, Device, DeviceDescriptor, Features, Instance,
+	InstanceDescriptor, Limits, LoadOp, Operations, PowerPreference, Queue,
+	RenderPassColorAttachment, RenderPassDescriptor, RequestAdapterOptions, Surface,
+	SurfaceConfiguration, SurfaceError, TextureFormat, TextureUsages, TextureViewDescriptor,
 };
 use winit::{
 	dpi::LogicalSize,
-	event::Event,
+	event::{Event as WinitEvent, WindowEvent},
 	event_loop::{ControlFlow, EventLoop},
 	window::{Window, WindowBuilder},
 };
+
+#[allow(unused)]
+pub(crate) use crate::log::{core_debug, core_error, core_info, core_log, core_trace, core_warn};
 
 pub use crate::{
 	context::{EventContext, LayerContext},
@@ -40,8 +47,6 @@ pub struct Application {
 	surface: Surface,
 	window: Arc<Window>,
 	event_loop: Option<EventLoop<()>>,
-	view: Option<TextureView>,
-	output: Option<SurfaceTexture>,
 }
 
 impl Application {
@@ -109,15 +114,13 @@ impl Application {
 			surface,
 			window,
 			event_loop: Some(event_loop),
-			view: None,
-			output: None,
 		}
 	}
 
 	fn run(
 		mut self,
 		mut layer_stack: LayerStack,
-		mut event_handler: impl FnMut(&mut EventContext, event::Event) + 'static,
+		mut event_handler: impl FnMut(&mut EventContext, Event) + 'static,
 	) -> Result<(), crate::Error> {
 		match self.event_loop {
 			None => Err(Error::Core),
@@ -127,12 +130,14 @@ impl Application {
 				self.event_loop
 					.take()
 					.unwrap()
-					.run(move |winit_event, _, control_flow| {
+					.run(move |mut winit_event, _, control_flow| {
 						let now = Instant::now();
 
 						match winit_event {
-							Event::RedrawRequested(_) => {
-								match self.being_frame() {
+							WinitEvent::RedrawRequested(_) => {
+								//TODO rendering is overlapping as if two framebuffers are rendered for every frame.
+								// how can we queue multiple render passes into a single output?
+								match self.render() {
 									Ok(_) => {},
 									Err(SurfaceError::Lost) => self.resize(self.size),
 									Err(SurfaceError::OutOfMemory) => {
@@ -152,22 +157,34 @@ impl Application {
 
 									layer.on_update(&mut context);
 								}
-
-								self.end_frame();
 							},
 
-							Event::MainEventsCleared => {
+							WinitEvent::MainEventsCleared => {
 								self.window.request_redraw();
 							},
 
 							_ => {
-								if let Ok(event) = event::Event::try_from(winit_event) {
+								if let WinitEvent::WindowEvent {
+									event:
+										WindowEvent::CursorMoved {
+											ref mut position, ..
+										},
+									..
+								} = winit_event
+								{
+									let scale = self.window.scale_factor();
+									position.x /= scale;
+									position.y /= scale;
+								}
+
+								if let Ok(event) = Event::try_from(winit_event) {
 									let mut context = EventContext::new(
 										now - last_update,
 										&mut self,
 										&mut layer_stack,
 										Some(control_flow),
 									);
+
 									event_handler(&mut context, event);
 								}
 							},
@@ -186,14 +203,7 @@ impl Application {
 		self.surface.configure(&self.device, &self.config);
 	}
 
-	pub fn end_frame(&mut self) {
-		if let Some(output) = self.output.take() {
-			output.present();
-		}
-	}
-
-	pub fn being_frame(&mut self) -> Result<(), SurfaceError> {
-		//TODO: keep a reference to the encoder to enable rendering on the same command
+	pub fn render(&mut self) -> Result<(), SurfaceError> {
 		let output = self.surface.get_current_texture()?;
 		let view = output
 			.texture
@@ -226,8 +236,7 @@ impl Application {
 
 		self.queue.submit(once(encoder.finish()));
 
-		self.view = Some(view);
-		self.output = Some(output);
+		output.present();
 
 		Ok(())
 	}
@@ -250,15 +259,15 @@ pub fn run(core: impl Core + 'static, mut configure: impl FnMut(&mut EventContex
 
 	application
 		.run(layer_stack, move |context, event| match event {
-			event::Event::WindowClose => core.on_window_close(context),
+			Event::WindowClose => core.on_window_close(context),
 
-			event::Event::WindowResize { size } => core.on_window_resize(context, size),
+			Event::WindowResize { size } => core.on_window_resize(context, size),
 
 			_ => {
 				for i in 0..context.layer_stack.len() {
 					let (_, ref mut layer) = context.layer_stack[i];
 
-					if layer.on_event(&event) {
+					if layer.on_event(&mut context.layer_context, &event) {
 						break;
 					}
 				}

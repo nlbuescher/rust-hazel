@@ -13,7 +13,7 @@ pub trait Layer {
 	fn on_attach(&mut self, _: &mut LayerContext) {}
 	fn on_detach(&mut self, _: &mut LayerContext) {}
 	fn on_update(&mut self, _: &mut LayerContext) {}
-	fn on_event(&self, _: &Event) -> bool {
+	fn on_event(&mut self, _: &mut LayerContext, _: &Event) -> bool {
 		false
 	}
 }

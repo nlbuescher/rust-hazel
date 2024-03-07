@@ -1,4 +1,4 @@
-use hazel::{event::Event, EventContext, Layer, LayerContext, Size};
+use hazel::{EventContext, Layer, Size};
 
 struct Sandbox {}
 
@@ -29,15 +29,6 @@ impl ExampleLayer {
 impl Layer for ExampleLayer {
 	fn get_name(&self) -> &str {
 		"Example Layer"
-	}
-
-	fn on_update(&mut self, _: &mut LayerContext) {
-		hazel::info!("ExampleLayer::on_update");
-	}
-
-	fn on_event(&self, event: &Event) -> bool {
-		hazel::info!("{event}");
-		true
 	}
 }
 
