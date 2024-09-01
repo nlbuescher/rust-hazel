@@ -1,0 +1,10 @@
+[package]
+name = "sandbox"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+hazel = { path = "../hazel" }
+
+[lints.clippy]
+pedantic = "warn"
