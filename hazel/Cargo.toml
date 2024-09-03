@@ -5,6 +5,10 @@ edition = "2021"
 
 [dependencies]
 chrono = "0.4.38"
+tap = "1.0.1"
+pollster = "0.3.0"
+winit = "0.30.5"
+wgpu = "22.1.0"
 
 [lints.clippy]
 pedantic = "warn"

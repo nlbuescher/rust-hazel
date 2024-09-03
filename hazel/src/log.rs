@@ -1,9 +1,6 @@
 #![allow(unused)]
 
-use std::{
-	fmt::{self, Display},
-	time::{SystemTime, UNIX_EPOCH},
-};
+use std::fmt::{self, Display};
 
 #[derive(Copy, Clone)]
 pub enum Level {
@@ -23,7 +20,9 @@ static LOG_LEVEL_NAMES: [&str; 5] = [
 ];
 
 impl Display for Level {
-	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { f.pad(LOG_LEVEL_NAMES[*self as usize]) }
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		f.pad(LOG_LEVEL_NAMES[*self as usize])
+	}
 }
 
 pub(crate) fn core_log(level: Level, message: impl Display) {
@@ -41,7 +40,7 @@ macro_rules! core_trace {
 			std::mem::drop($first);
 		}
 	};
-	
+
 	($first:expr $(, $rest: expr)+) => {
 		if cfg!(debug_assertions) {
 			$crate::log::core_log($crate::log::Level::Trace, format!($first));
@@ -66,7 +65,7 @@ macro_rules! core_debug {
 			std::mem::drop($first);
 		}
 	};
-	
+
 	($first:expr $(, $rest: expr)+) => {
 		if cfg!(debug_assertions) {
 			$crate::log::core_log($crate::log::Level::Debug, format!($first));
@@ -91,7 +90,7 @@ macro_rules! core_info {
 			std::mem::drop($first);
 		}
 	};
-	
+
 	($first:expr $(, $rest: expr)+) => {
 		if cfg!(debug_assertions) {
 			$crate::log::core_log($crate::log::Level::Info, format!($first));
@@ -116,7 +115,7 @@ macro_rules! core_warn {
 			std::mem::drop($first);
 		}
 	};
-	
+
 	($first:expr $(, $rest: expr)+) => {
 		if cfg!(debug_assertions) {
 			$crate::log::core_log($crate::log::Level::Warn, format!($first));
@@ -141,7 +140,7 @@ macro_rules! core_error {
 			std::mem::drop($first);
 		}
 	};
-	
+
 	($first:expr $(, $rest: expr)+) => {
 		if cfg!(debug_assertions) {
 			$crate::log::core_log($crate::log::Level::Error, format!($first));
@@ -172,7 +171,7 @@ macro_rules! trace {
 			std::mem::drop($first);
 		}
 	};
-	
+
 	($first:expr $(, $rest: expr)+) => {
 		if cfg!(debug_assertions) {
 			$crate::log::log($crate::log::Level::Trace, format!($first));
@@ -185,8 +184,6 @@ macro_rules! trace {
 	}
 }
 
-pub(crate) use crate::trace;
-
 #[macro_export]
 macro_rules! debug {
 	($first:expr) => {
@@ -198,7 +195,7 @@ macro_rules! debug {
 			std::mem::drop($first);
 		}
 	};
-	
+
 	($first:expr $(, $rest: expr)+) => {
 		if cfg!(debug_assertions) {
 			$crate::log::log($crate::log::Level::Debug, format!($first));
@@ -211,8 +208,6 @@ macro_rules! debug {
 	}
 }
 
-pub(crate) use crate::debug;
-
 #[macro_export]
 macro_rules! info {
 	($first:expr) => {
@@ -224,7 +219,7 @@ macro_rules! info {
 			std::mem::drop($first);
 		}
 	};
-	
+
 	($first:expr $(, $rest: expr)+) => {
 		if cfg!(debug_assertions) {
 			$crate::log::log($crate::log::Level::Info, format!($first));
@@ -237,8 +232,6 @@ macro_rules! info {
 	}
 }
 
-pub(crate) use crate::info;
-
 #[macro_export]
 macro_rules! warn {
 	($first:expr) => {
@@ -250,7 +243,7 @@ macro_rules! warn {
 			std::mem::drop($first);
 		}
 	};
-	
+
 	($first:expr $(, $rest: expr)+) => {
 		if cfg!(debug_assertions) {
 			$crate::log::log($crate::log::Level::Warn, format!($first));
@@ -263,8 +256,6 @@ macro_rules! warn {
 	}
 }
 
-pub(crate) use crate::warn;
-
 #[macro_export]
 macro_rules! error {
 	($first:expr) => {
@@ -276,7 +267,7 @@ macro_rules! error {
 			std::mem::drop($first);
 		}
 	};
-	
+
 	($first:expr $(, $rest: expr)+) => {
 		if cfg!(debug_assertions) {
 			$crate::log::log($crate::log::Level::Error, format!($first));
@@ -288,5 +279,3 @@ macro_rules! error {
 		}
 	}
 }
-
-pub(crate) use crate::error;

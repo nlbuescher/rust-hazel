@@ -4,4 +4,7 @@ impl Sandbox {}
 
 impl hazel::Application for Sandbox {}
 
-pub fn main() { hazel::run(|| Sandbox {}); }
+/// # Errors
+pub fn main() -> Result<(), hazel::Error> {
+	hazel::run(|| Sandbox {})
+}
