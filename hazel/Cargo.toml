@@ -12,3 +12,6 @@ wgpu = "22.1.0"
 
 [lints.clippy]
 pedantic = "warn"
+cast_lossless = "allow"
+cast_possible_truncation = "allow"
+cast_sign_loss = "allow"

@@ -12,8 +12,9 @@ use wgpu::{
 };
 use winit::{
 	application::ApplicationHandler,
-	dpi::PhysicalSize,
-	event::WindowEvent,
+	dpi::{PhysicalPosition, PhysicalSize},
+	error::EventLoopError,
+	event::{ElementState, MouseScrollDelta, WindowEvent},
 	event_loop::{ActiveEventLoop, EventLoop},
 	window::{Window, WindowId},
 };
@@ -23,13 +24,15 @@ pub use winit::{event::MouseButton, keyboard::Key};
 pub(crate) use crate::log::{core_debug, core_error, core_info, core_trace, core_warn};
 
 pub trait Application {
-	fn on_key_pressed(&self, _key: Key, _repeat_count: usize) {}
+	fn on_key_pressed(&self, _key: Key, _is_repeat: bool) {}
 	fn on_key_released(&self, _key: Key) {}
 	fn on_mouse_moved(&self, _x: f32, _y: f32) {}
 	fn on_mouse_scrolled(&self, _x_offset: f32, _y_offset: f32) {}
 	fn on_mouse_button_pressed(&self, _button: MouseButton) {}
 	fn on_mouse_button_released(&self, _button: MouseButton) {}
-	fn on_window_close(&self) {}
+	fn on_window_close(&self, event_loop: &ActiveEventLoop) {
+		event_loop.exit();
+	}
 	fn on_window_resize(&self, _width: u32, _height: u32) {}
 }
 
@@ -84,14 +87,10 @@ impl<'app, App: Application> ApplicationHandler for Context<'app, App> {
 
 		let config = {
 			let scale_factor = window.scale_factor();
-			#[allow(
-				clippy::cast_sign_loss,
-				clippy::cast_possible_truncation,
-				clippy::cast_lossless
-			)]
-			let (frame_width, frame_height) = window.inner_size().pipe(|PhysicalSize { width, height }| {
-				((width as f64 * scale_factor) as u32, (height as f64 * scale_factor) as u32)
-			});
+			let (frame_width, frame_height) =
+				window.inner_size().pipe(|PhysicalSize { width, height }| {
+					((width as f64 * scale_factor) as u32, (height as f64 * scale_factor) as u32)
+				});
 			surface
 				.get_default_config(&adapter, frame_width, frame_height)
 				.expect("Could not get default config!")
@@ -113,8 +112,33 @@ impl<'app, App: Application> ApplicationHandler for Context<'app, App> {
 		let state = self.state.as_mut().unwrap();
 		match event {
 			WindowEvent::CloseRequested => {
-				core_info!("Window close was pressed; exiting...");
-				event_loop.exit();
+				self.application.on_window_close(event_loop);
+			},
+
+			WindowEvent::KeyboardInput { event, .. } => match event.state {
+				ElementState::Pressed => {
+					self.application.on_key_pressed(event.logical_key, event.repeat);
+				},
+				ElementState::Released => self.application.on_key_released(event.logical_key),
+			},
+
+			WindowEvent::MouseInput { state, button, .. } => match state {
+				ElementState::Pressed => self.application.on_mouse_button_pressed(button),
+				ElementState::Released => self.application.on_mouse_button_released(button),
+			},
+
+			WindowEvent::MouseWheel { delta, .. } => match delta {
+				MouseScrollDelta::LineDelta(x, y) => {
+					let line_scale = 2.0; // hard-code a line pixel size of 2
+					self.application.on_mouse_scrolled(x * line_scale, y * line_scale);
+				},
+				MouseScrollDelta::PixelDelta(PhysicalPosition { x, y }) => {
+					self.application.on_mouse_scrolled(x as f32, y as f32);
+				},
+			},
+
+			WindowEvent::CursorMoved { position: PhysicalPosition { x, y }, .. } => {
+				self.application.on_mouse_moved(x as f32, y as f32);
 			},
 
 			WindowEvent::RedrawRequested => {
@@ -148,6 +172,8 @@ impl<'app, App: Application> ApplicationHandler for Context<'app, App> {
 				state.config.height = height;
 				state.surface.configure(&state.device, &state.config);
 				state.window.request_redraw();
+
+				self.application.on_window_resize(width, height);
 			},
 
 			_ => {},
@@ -160,14 +186,17 @@ pub enum Error {
 	Unknown(String),
 }
 
+impl From<EventLoopError> for Error {
+	fn from(value: EventLoopError) -> Self {
+		Self::Unknown(format!("{value}"))
+	}
+}
+
 /// # Errors
 pub fn run<App: Application>(app_factory: impl Fn() -> App) -> Result<(), Error> {
 	let mut context = Context::new(app_factory());
 
-	EventLoop::new()
-		.map_err(|error| Error::Unknown(format!("{error}")))?
-		.run_app(&mut context)
-		.map_err(|error| Error::Unknown(format!("{error}")))?;
+	EventLoop::new()?.run_app(&mut context)?;
 
 	Ok(())
 }
