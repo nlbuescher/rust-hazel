@@ -1,3 +1,5 @@
+pub mod event;
+pub mod layer;
 pub mod log;
 
 use std::sync::Arc;
@@ -15,25 +17,26 @@ use winit::{
 	dpi::{PhysicalPosition, PhysicalSize},
 	error::EventLoopError,
 	event::{ElementState, MouseScrollDelta, WindowEvent},
-	event_loop::{ActiveEventLoop, EventLoop},
+	event_loop::EventLoop,
 	window::{Window, WindowId},
 };
-pub use winit::{event::MouseButton, keyboard::Key};
+pub use winit::{event::MouseButton, event_loop::ActiveEventLoop, keyboard::Key};
 
 #[allow(unused)]
 pub(crate) use crate::log::{core_debug, core_error, core_info, core_trace, core_warn};
+use crate::{event::Event, layer::LayerStack};
 
 pub trait Application {
-	fn on_key_pressed(&self, _key: Key, _is_repeat: bool) {}
-	fn on_key_released(&self, _key: Key) {}
-	fn on_mouse_moved(&self, _x: f32, _y: f32) {}
-	fn on_mouse_scrolled(&self, _x_offset: f32, _y_offset: f32) {}
-	fn on_mouse_button_pressed(&self, _button: MouseButton) {}
-	fn on_mouse_button_released(&self, _button: MouseButton) {}
+	fn on_key_pressed(&mut self, _event_loop: &ActiveEventLoop, _key: &Key, _is_repeat: bool) {}
+	fn on_key_released(&mut self, _event_loop: &ActiveEventLoop, _key: &Key) {}
+	fn on_mouse_button_pressed(&self, _event_loop: &ActiveEventLoop, _button: &MouseButton) {}
+	fn on_mouse_button_released(&self, _event_loop: &ActiveEventLoop, _button: &MouseButton) {}
+	fn on_mouse_moved(&self, _event_loop: &ActiveEventLoop, _x: f32, _y: f32) {}
+	fn on_mouse_scrolled(&self, _event_loop: &ActiveEventLoop, _x_offset: f32, _y_offset: f32) {}
 	fn on_window_close(&self, event_loop: &ActiveEventLoop) {
 		event_loop.exit();
 	}
-	fn on_window_resize(&self, _width: u32, _height: u32) {}
+	fn on_window_resize(&self, _event_loop: &ActiveEventLoop, _width: u32, _height: u32) {}
 }
 
 struct State<'app> {
@@ -46,12 +49,50 @@ struct State<'app> {
 
 pub struct Context<'app, App: Application> {
 	application: App,
+	layer_stack: LayerStack,
 	state: Option<State<'app>>,
 }
 
 impl<'app, App: Application> Context<'app, App> {
-	fn new(application: App) -> Self {
-		Context { application, state: None }
+	fn new(application: App, layer_setup: impl Fn(&mut LayerStack)) -> Self {
+		let mut layer_stack = LayerStack::new();
+		layer_setup(&mut layer_stack);
+		Context { application, layer_stack, state: None }
+	}
+
+	fn on_event(&mut self, event_loop: &ActiveEventLoop, event: &Event) {
+		match event {
+			Event::KeyPressed { key, is_repeat } => {
+				self.application.on_key_pressed(event_loop, key, *is_repeat);
+			},
+			Event::KeyReleased { key } => {
+				self.application.on_key_released(event_loop, key);
+			},
+			Event::MouseButtonPressed(button) => {
+				self.application.on_mouse_button_pressed(event_loop, button);
+			},
+			Event::MouseButtonReleased(button) => {
+				self.application.on_mouse_button_released(event_loop, button);
+			},
+			Event::MouseMoved { x, y } => {
+				self.application.on_mouse_moved(event_loop, *x, *y);
+			},
+			Event::MouseScrolled { x_offset, y_offset } => {
+				self.application.on_mouse_scrolled(event_loop, *x_offset, *y_offset);
+			},
+			Event::WindowClose => {
+				self.application.on_window_close(event_loop);
+			},
+			Event::WindowResize { width, height } => {
+				self.application.on_window_resize(event_loop, *width, *height);
+			},
+		}
+
+		for layer in &mut self.layer_stack {
+			if layer.on_event(event_loop, event) {
+				break;
+			}
+		}
 	}
 }
 
@@ -104,41 +145,50 @@ impl<'app, App: Application> ApplicationHandler for Context<'app, App> {
 		&mut self,
 		event_loop: &ActiveEventLoop,
 		_window_id: WindowId,
-		event: WindowEvent,
+		winit_event: WindowEvent,
 	) {
 		if self.state.is_none() {
 			return;
 		}
 		let state = self.state.as_mut().unwrap();
-		match event {
-			WindowEvent::CloseRequested => {
-				self.application.on_window_close(event_loop);
-			},
+
+		// handle winit event
+		let event = match winit_event {
+			WindowEvent::CloseRequested => Event::WindowClose,
 
 			WindowEvent::KeyboardInput { event, .. } => match event.state {
 				ElementState::Pressed => {
-					self.application.on_key_pressed(event.logical_key, event.repeat);
+					Event::KeyPressed { key: event.logical_key, is_repeat: event.repeat }
 				},
-				ElementState::Released => self.application.on_key_released(event.logical_key),
+				ElementState::Released => Event::KeyReleased { key: event.logical_key },
 			},
 
 			WindowEvent::MouseInput { state, button, .. } => match state {
-				ElementState::Pressed => self.application.on_mouse_button_pressed(button),
-				ElementState::Released => self.application.on_mouse_button_released(button),
+				ElementState::Pressed => Event::MouseButtonPressed(button),
+				ElementState::Released => Event::MouseButtonReleased(button),
 			},
 
 			WindowEvent::MouseWheel { delta, .. } => match delta {
 				MouseScrollDelta::LineDelta(x, y) => {
 					let line_scale = 2.0; // hard-code a line pixel size of 2
-					self.application.on_mouse_scrolled(x * line_scale, y * line_scale);
+					Event::MouseScrolled { x_offset: x * line_scale, y_offset: y * line_scale }
 				},
 				MouseScrollDelta::PixelDelta(PhysicalPosition { x, y }) => {
-					self.application.on_mouse_scrolled(x as f32, y as f32);
+					Event::MouseScrolled { x_offset: x as f32, y_offset: y as f32 }
 				},
 			},
 
 			WindowEvent::CursorMoved { position: PhysicalPosition { x, y }, .. } => {
-				self.application.on_mouse_moved(x as f32, y as f32);
+				Event::MouseMoved { x: x as f32, y: y as f32 }
+			},
+
+			WindowEvent::Resized(PhysicalSize { width, height }) => {
+				state.config.width = width;
+				state.config.height = height;
+				state.surface.configure(&state.device, &state.config);
+				state.window.request_redraw();
+
+				Event::WindowResize { width, height }
 			},
 
 			WindowEvent::RedrawRequested => {
@@ -165,19 +215,15 @@ impl<'app, App: Application> ApplicationHandler for Context<'app, App> {
 				}
 				state.queue.submit(Some(encoder.finish()));
 				frame.present();
+				return;
 			},
 
-			WindowEvent::Resized(PhysicalSize { width, height }) => {
-				state.config.width = width;
-				state.config.height = height;
-				state.surface.configure(&state.device, &state.config);
-				state.window.request_redraw();
-
-				self.application.on_window_resize(width, height);
+			_ => {
+				return;
 			},
+		};
 
-			_ => {},
-		}
+		self.on_event(event_loop, &event);
 	}
 }
 
@@ -193,8 +239,11 @@ impl From<EventLoopError> for Error {
 }
 
 /// # Errors
-pub fn run<App: Application>(app_factory: impl Fn() -> App) -> Result<(), Error> {
-	let mut context = Context::new(app_factory());
+pub fn run(
+	app: impl Application,
+	layer_setup: impl Fn(&mut layer::LayerStack),
+) -> Result<(), Error> {
+	let mut context = Context::new(app, layer_setup);
 
 	EventLoop::new()?.run_app(&mut context)?;
 
